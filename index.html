@@ -43,19 +43,26 @@ body{
 @media (prefers-reduced-motion:reduce){.dot.live{animation:none}}
 
 .speed{text-align:center;padding-block:6px 2px;color:var(--white)}
+.big{display:grid;grid-template-columns:auto auto;justify-content:center;align-items:center;column-gap:clamp(8px,3vw,20px)}
 .speedValue{
-  font-family:var(--display);font-weight:700;font-size:min(46vw,38vh);line-height:.9;letter-spacing:-.02em;
+  font-family:var(--display);font-weight:700;font-size:min(36vw,34vh);line-height:.9;letter-spacing:-.02em;
   font-variant-numeric:tabular-nums;transition:opacity .3s;white-space:nowrap;
 }
 .speedValue .dec{font-size:.45em;font-weight:500}
 .speedValue.stale{opacity:.35}
-.speedUnit{font-family:var(--display);font-weight:500;font-size:clamp(22px,7vw,40px);letter-spacing:.06em;margin-top:6px}
-.altValue{font-family:var(--display);font-weight:700;font-size:clamp(40px,14vw,80px);line-height:1;letter-spacing:-.01em;font-variant-numeric:tabular-nums;margin-top:10px;white-space:nowrap}
+.side{display:grid;gap:8px;text-align:left}
+.sideItem{display:grid;line-height:1;gap:2px}
+.sideLabel{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;opacity:.7}
+.sideVal{font-family:var(--display);font-weight:600;font-size:clamp(18px,5.5vw,28px);font-variant-numeric:tabular-nums;white-space:nowrap}
+.alt .sideVal{font-size:clamp(15px,4.2vw,22px)}
+.speedUnit{font-family:var(--display);font-weight:500;font-size:clamp(22px,7vw,40px);letter-spacing:.06em;margin-top:4px}
+.alt{margin-top:10px}
+.altValue{font-family:var(--display);font-weight:700;font-size:clamp(36px,12vw,64px);line-height:1;letter-spacing:-.01em;font-variant-numeric:tabular-nums;white-space:nowrap}
 .altValue .altUnit{font-size:.45em;font-weight:500;letter-spacing:.06em}
 .altLabel{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;opacity:.7;margin-top:2px}
 .speedNote{color:var(--muted);font-size:14px;margin-top:8px;min-height:1.4em}
 @media (orientation:landscape) and (max-height:520px){
-  .speedValue{font-size:min(26vw,44vh)}
+  .speedValue{font-size:min(24vw,40vh)}
   .altValue{font-size:clamp(28px,8vw,56px)}
 }
 
@@ -89,11 +96,23 @@ dd.small{font-size:15px;font-weight:400}
   </header>
 
   <section class="speed">
-    <div class="speedValue" id="speed"><span id="speedInt">—</span><span class="dec" id="speedDec"></span></div>
+    <div class="big">
+      <div class="speedValue" id="speed"><span id="speedInt">—</span><span class="dec" id="speedDec"></span></div>
+      <div class="side">
+        <div class="sideItem"><span class="sideLabel">max</span><span class="sideVal" id="speedMax">—</span></div>
+        <div class="sideItem"><span class="sideLabel">min</span><span class="sideVal" id="speedMin">—</span></div>
+      </div>
+    </div>
     <div class="speedUnit">km/h</div>
-    <div class="altValue"><span id="altBig">—</span><span class="altUnit"> m</span></div>
+    <div class="big alt">
+      <div class="altValue"><span id="altBig">—</span><span class="altUnit"> m</span></div>
+      <div class="side">
+        <div class="sideItem"><span class="sideLabel">max</span><span class="sideVal" id="altMax">—</span></div>
+        <div class="sideItem"><span class="sideLabel">min</span><span class="sideVal" id="altMin">—</span></div>
+      </div>
+    </div>
     <div class="altLabel">Altitude</div>
-    <div class="speedNote" id="speedNote">Appuie sur Démarrer</div>
+    <div class="speedNote" id="speedNote">Démarrage du GPS…</div>
   </section>
 
   <section class="controls">
@@ -123,7 +142,6 @@ dd.small{font-size:15px;font-weight:400}
   <section class="panel">
     <h2>Trajet</h2>
     <dl>
-      <div><dt>Vitesse max</dt><dd id="max">—</dd></div>
       <div><dt>Moyenne en mouvement</dt><dd id="avg">—</dd></div>
       <div><dt>Distance (approx.)</dt><dd id="dist">—</dd></div>
       <div><dt>Durée</dt><dd id="dur">—</dd></div>
@@ -146,14 +164,15 @@ dd.small{font-size:15px;font-weight:400}
 (function(){
 'use strict';
 var $=function(id){return document.getElementById(id);};
-var el={speed:$('speed'),speedInt:$('speedInt'),speedDec:$('speedDec'),altBig:$('altBig'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
+var el={speed:$('speed'),speedInt:$('speedInt'),speedDec:$('speedDec'),speedMax:$('speedMax'),speedMin:$('speedMin'),
+  altBig:$('altBig'),altMax:$('altMax'),altMin:$('altMin'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
   lat:$('lat'),lon:$('lon'),acc:$('acc'),alt:$('alt'),altAcc:$('altAcc'),heading:$('heading'),speedRaw:$('speedRaw'),
   ts:$('ts'),interval:$('interval'),fixes:$('fixes'),source:$('source'),
-  max:$('max'),avg:$('avg'),dist:$('dist'),dur:$('dur'),
+  avg:$('avg'),dist:$('dist'),dur:$('dur'),
   secure:$('secure'),perm:$('perm'),wake:$('wake'),err:$('err'),
   btnStart:$('btnStart'),btnReset:$('btnReset'),btnFull:$('btnFull')};
 
-var S={watchId:null,running:false,last:null,fixes:0,maxKmh:0,dist:0,moveMs:0,startAt:null,intervals:[],ema:null,wakeLock:null};
+var S={watchId:null,running:false,last:null,fixes:0,maxKmh:null,minKmh:null,altMax:null,altMin:null,dist:0,moveMs:0,startAt:null,intervals:[],ema:null,wakeLock:null};
 var CARD=['N','NE','E','SE','S','SO','O','NO'];
 var ERR={
   1:['Accès à la position refusé. Autorise la localisation pour cette page dans les réglages du navigateur, puis relance.','bad'],
@@ -193,8 +212,13 @@ function estimateSource(c){
   return ['Réseau cellulaire, probable','bad'];
 }
 
+function renderExtremes(){
+  el.speedMax.textContent=(S.maxKmh==null)?'—':nf(S.maxKmh,1);
+  el.speedMin.textContent=(S.minKmh==null)?'—':nf(S.minKmh,1);
+  el.altMax.textContent=(S.altMax==null)?'—':nf(S.altMax,1);
+  el.altMin.textContent=(S.altMin==null)?'—':nf(S.altMin,1);
+}
 function renderTrip(){
-  el.max.textContent=S.fixes?nf(S.maxKmh,0)+' km/h':'—';
   el.avg.textContent=S.moveMs>0?nf(S.dist/(S.moveMs/1000)*3.6,0)+' km/h':'—';
   el.dist.textContent=S.fixes?(S.dist>=1000?nf(S.dist/1000,2)+' km':nf(S.dist,0)+' m'):'—';
   el.dur.textContent=(S.startAt&&S.last)?fmtDur(S.last.t-S.startAt):'—';
@@ -227,7 +251,15 @@ function onFix(pos){
     var moving=(c.speed!=null)?(c.speed>=0.8):(d>Math.max(5,c.accuracy));
     if(moving){S.dist+=d;S.moveMs+=(t-prev.t);}
   }
-  if(kmh!=null&&c.accuracy<=30&&kmh>S.maxKmh)S.maxKmh=kmh;
+  if(kmh!=null&&c.accuracy<=30){
+    if(S.maxKmh==null||kmh>S.maxKmh)S.maxKmh=kmh;
+    if(S.minKmh==null||kmh<S.minKmh)S.minKmh=kmh;
+  }
+  var altOk=c.altitude!=null&&!Number.isNaN(c.altitude)&&c.accuracy<=30&&(c.altitudeAccuracy==null||c.altitudeAccuracy<=50);
+  if(altOk){
+    if(S.altMax==null||c.altitude>S.altMax)S.altMax=c.altitude;
+    if(S.altMin==null||c.altitude<S.altMin)S.altMin=c.altitude;
+  }
 
   S.last={latitude:c.latitude,longitude:c.longitude,accuracy:c.accuracy,t:t};
 
@@ -252,6 +284,7 @@ function onFix(pos){
   el.fixes.textContent=String(S.fixes);
   var est=estimateSource(c);
   el.source.textContent=est[0];el.source.className='small '+est[1];
+  renderExtremes();
   renderTrip();
   el.err.hidden=true;
   setStatus('live','GPS actif');
@@ -284,8 +317,9 @@ function stop(){
   releaseWakeLock();
 }
 function reset(){
-  S.fixes=0;S.maxKmh=0;S.dist=0;S.moveMs=0;S.startAt=null;S.intervals=[];S.ema=null;
+  S.fixes=0;S.maxKmh=null;S.minKmh=null;S.altMax=null;S.altMin=null;S.dist=0;S.moveMs=0;S.startAt=null;S.intervals=[];S.ema=null;
   el.fixes.textContent='0';el.interval.textContent='—';
+  renderExtremes();
   renderTrip();
 }
 
@@ -353,6 +387,8 @@ setInterval(function(){
     else if(age>5000){setStatus('stale','Signal faible');el.speed.classList.add('stale');}
   }
 },500);
+
+start();
 })();
 </script>
 </body>
