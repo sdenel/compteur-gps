@@ -86,6 +86,8 @@ dd.small{font-size:15px;font-weight:400}
 .msg{font-size:14px;color:var(--muted);margin:0 0 8px}
 .msg.bad{color:var(--bad)}.msg.warn{color:var(--warn)}
 .fine{font-size:13px;color:var(--muted);margin:10px 0 0;line-height:1.45}
+.opt{display:flex;gap:10px;align-items:flex-start;font-size:14px;margin-top:12px;cursor:pointer}
+.opt input{width:20px;height:20px;margin:0;flex:none;accent-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -129,8 +131,10 @@ dd.small{font-size:15px;font-weight:400}
       <div><dt>Longitude</dt><dd id="lon">—</dd></div>
       <div><dt>Précision (rayon)</dt><dd id="acc">—</dd></div>
       <div><dt>Vitesse brute API</dt><dd id="speedRaw">—</dd></div>
-      <div><dt>Altitude</dt><dd id="alt">—</dd></div>
+      <div><dt>Altitude brute API</dt><dd id="alt">—</dd></div>
       <div><dt>Précision altitude</dt><dd id="altAcc">—</dd></div>
+      <div><dt>Géoïde EGM96 ici</dt><dd id="geoid">—</dd></div>
+      <div><dt>Altitude carte</dt><dd id="altMslDetail">—</dd></div>
       <div><dt>Cap</dt><dd id="heading">—</dd></div>
       <div><dt>Heure du fix</dt><dd id="ts">—</dd></div>
       <div><dt>Cadence (médiane)</dt><dd id="interval">—</dd></div>
@@ -154,9 +158,11 @@ dd.small{font-size:15px;font-weight:400}
       <div><dt>Contexte sécurisé</dt><dd id="secure" class="small">—</dd></div>
       <div><dt>Permission position</dt><dd id="perm" class="small">—</dd></div>
       <div class="full"><dt>Écran</dt><dd id="wake" class="small">—</dd></div>
+      <div class="full"><dt>Grille géoïde</dt><dd id="geoidStatus" class="small">chargement…</dd></div>
     </dl>
+    <label class="opt"><input type="checkbox" id="chkMsl"> L’altitude brute est déjà au niveau de la mer (iOS) : ne pas la corriger</label>
     <p class="fine">La source est estimée d’après la précision et la présence de vitesse / cap / altitude dans le fix : le navigateur reçoit une position déjà fusionnée par le système et n’expose ni la constellation (GPS, Galileo, GLONASS, BeiDou), ni le nombre de satellites, ni le SNR ou le HDOP.</p>
-    <p class="fine">Altitude brute de l’API : sur Android, au-dessus de l’ellipsoïde WGS84 ; sur iOS, au-dessus du niveau de la mer. Vitesse : fournie par le récepteur quand elle existe, sinon calculée entre deux positions successives.</p>
+    <p class="fine">Altitude brute de l’API : sur Android, hauteur au-dessus de l’ellipsoïde WGS84 ; sur iOS, au-dessus du niveau de la mer. Altitude carte = altitude brute − ondulation du géoïde EGM96 (grille 1° embarquée, interpolation bilinéaire ; écart max 2,5 m en Europe, 14 m dans le monde). Vitesse : fournie par le récepteur quand elle existe, sinon calculée entre deux positions successives.</p>
   </section>
 </main>
 
@@ -166,7 +172,8 @@ dd.small{font-size:15px;font-weight:400}
 var $=function(id){return document.getElementById(id);};
 var el={speed:$('speed'),speedInt:$('speedInt'),speedDec:$('speedDec'),speedMax:$('speedMax'),speedMin:$('speedMin'),
   altBig:$('altBig'),altMax:$('altMax'),altMin:$('altMin'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
-  lat:$('lat'),lon:$('lon'),acc:$('acc'),alt:$('alt'),altAcc:$('altAcc'),heading:$('heading'),speedRaw:$('speedRaw'),
+  lat:$('lat'),lon:$('lon'),acc:$('acc'),alt:$('alt'),altAcc:$('altAcc'),geoid:$('geoid'),altMslDetail:$('altMslDetail'),
+  altLabel:document.querySelector('.altLabel'),geoidStatus:$('geoidStatus'),chkMsl:$('chkMsl'),heading:$('heading'),speedRaw:$('speedRaw'),
   ts:$('ts'),interval:$('interval'),fixes:$('fixes'),source:$('source'),
   avg:$('avg'),dist:$('dist'),dur:$('dur'),
   secure:$('secure'),perm:$('perm'),wake:$('wake'),err:$('err'),
@@ -201,6 +208,47 @@ function fmtDur(ms){
   return (h?h+' h ':'')+m+' min '+(r<10?'0':'')+r+' s';
 }
 function setStatus(cls,text){el.dot.className='dot'+(cls?' '+cls:'');el.statusText.textContent=text;}
+
+/* Géoïde EGM96 : grille 1° (181 lignes de +90° à −90°, 360 colonnes de −180° à 179°), int16 LE en décimètres */
+var GEOID={step:1,rows:181,cols:360,g:null};
+function setGeoidStatus(text,cls){el.geoidStatus.textContent=text;el.geoidStatus.className='small '+(cls||'');}
+function loadGeoid(){
+  if(!window.fetch||!window.DataView){setGeoidStatus('non prise en charge par ce navigateur : altitude non corrigée','warn');return;}
+  fetch('egm96-1deg.bin').then(function(r){
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.arrayBuffer();
+  }).then(function(buf){
+    var n=GEOID.rows*GEOID.cols;
+    if(buf.byteLength!==n*2)throw new Error('taille inattendue');
+    var dv=new DataView(buf),arr=new Int16Array(n);
+    for(var i=0;i<n;i++)arr[i]=dv.getInt16(i*2,true);
+    GEOID.g=arr;
+    S.altMax=null;S.altMin=null;renderExtremes();
+    setGeoidStatus('EGM96 1° chargée (130 Ko), correction active','ok');
+  }).catch(function(e){
+    setGeoidStatus('échec de chargement ('+e.message+') : altitude non corrigée','bad');
+  });
+}
+function geoidHeight(lat,lon){
+  var G=GEOID;if(!G.g)return null;
+  var x=(lon+180)/G.step;x=((x%G.cols)+G.cols)%G.cols;
+  var y=(90-lat)/G.step;if(y<0)y=0;if(y>G.rows-1)y=G.rows-1;
+  var c0=Math.floor(x),r0=Math.min(Math.floor(y),G.rows-2),fx=x-c0,fy=y-r0,c1=(c0+1)%G.cols,r1=r0+1;
+  var v=function(r,c){return G.g[r*G.cols+c]/10;};
+  var top=v(r0,c0)+(v(r0,c1)-v(r0,c0))*fx,bot=v(r1,c0)+(v(r1,c1)-v(r1,c0))*fx;
+  return top+(bot-top)*fy;
+}
+
+var IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function loadPref(){
+  try{var v=localStorage.getItem('cgps.rawMsl');if(v==='1'||v==='0')return v==='1';}catch(e){}
+  return IOS;
+}
+el.chkMsl.checked=loadPref();
+el.chkMsl.addEventListener('change',function(){
+  try{localStorage.setItem('cgps.rawMsl',el.chkMsl.checked?'1':'0');}catch(e){}
+  S.altMax=null;S.altMin=null;renderExtremes();
+});
 
 function estimateSource(c){
   var acc=c.accuracy;
@@ -255,10 +303,19 @@ function onFix(pos){
     if(S.maxKmh==null||kmh>S.maxKmh)S.maxKmh=kmh;
     if(S.minKmh==null||kmh<S.minKmh)S.minKmh=kmh;
   }
-  var altOk=c.altitude!=null&&!Number.isNaN(c.altitude)&&c.accuracy<=30&&(c.altitudeAccuracy==null||c.altitudeAccuracy<=50);
+  /* Altitude carte : brute − géoïde (Android), ou brute telle quelle si déjà au niveau de la mer (iOS) */
+  var hasAlt=c.altitude!=null&&!Number.isNaN(c.altitude);
+  var N=hasAlt?geoidHeight(c.latitude,c.longitude):null;
+  var altMsl=null,altMode='absente';
+  if(hasAlt){
+    if(el.chkMsl.checked){altMsl=c.altitude;altMode='native';}
+    else if(N!=null){altMsl=c.altitude-N;altMode='corrigée';}
+    else{altMsl=c.altitude;altMode='ellipsoide';}
+  }
+  var altOk=altMsl!=null&&altMode!=='ellipsoide'&&c.accuracy<=30&&(c.altitudeAccuracy==null||c.altitudeAccuracy<=50);
   if(altOk){
-    if(S.altMax==null||c.altitude>S.altMax)S.altMax=c.altitude;
-    if(S.altMin==null||c.altitude<S.altMin)S.altMin=c.altitude;
+    if(S.altMax==null||altMsl>S.altMax)S.altMax=altMsl;
+    if(S.altMin==null||altMsl<S.altMin)S.altMin=altMsl;
   }
 
   S.last={latitude:c.latitude,longitude:c.longitude,accuracy:c.accuracy,t:t};
@@ -269,7 +326,10 @@ function onFix(pos){
     var parts=nf(kmh,1).split(',');
     el.speedInt.textContent=parts[0];el.speedDec.textContent=','+(parts[1]||'0');
   }
-  el.altBig.textContent=(c.altitude==null||Number.isNaN(c.altitude))?'—':nf(c.altitude,1);
+  el.altBig.textContent=(altMsl==null)?'—':nf(altMsl,1);
+  el.altLabel.textContent={corrigée:'Altitude carte (niveau de la mer, EGM96)',native:'Altitude carte (niveau de la mer, fournie par l’OS)',ellipsoide:'Altitude ellipsoïde WGS84 (géoïde non chargé)',absente:'Altitude'}[altMode];
+  el.geoid.textContent=(N==null)?'—':(N>=0?'+':'')+nf(N,1)+' m';
+  el.altMslDetail.textContent=(altMsl==null)?'—':nf(altMsl,1)+' m'+(altMode==='ellipsoide'?' (non corrigée)':'');
   el.speed.classList.remove('stale');
   el.note.textContent=src;
   el.lat.textContent=nf(c.latitude,6);
@@ -388,6 +448,7 @@ setInterval(function(){
   }
 },500);
 
+loadGeoid();
 start();
 })();
 </script>
