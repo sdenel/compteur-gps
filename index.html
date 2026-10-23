@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Compteur GPS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Barlow:wght@400;600&display=swap">
+<style>
+/* Layout : tableau de bord une colonne — la vitesse occupe le haut de l'écran, les données dessous */
+:root{
+  --bg:#0b1020; --panel:#121a2e; --line:#243052;
+  --fg:#f3f1ea; --muted:#9aa3b8; --accent:#ffb347;
+  --ok:#5fd68a; --warn:#ffb347; --bad:#ff6b6b;
+  --display:"Barlow Condensed","Arial Narrow",Impact,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.4;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  -webkit-text-size-adjust:100%;overflow-x:hidden;touch-action:manipulation;
+}
+.app{min-height:100%;display:flex;flex-direction:column;gap:14px;padding-block:10px 28px;max-width:720px;margin:0 auto}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.status{display:flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:.08em;font-weight:600;font-size:12px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--muted);flex:none}
+.dot.live{background:var(--ok);animation:ping 1.2s ease-out infinite}
+.dot.stale{background:var(--warn)}
+.dot.bad{background:var(--bad)}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(95,214,138,.6)}100%{box-shadow:0 0 0 10px rgba(95,214,138,0)}}
+@media (prefers-reduced-motion:reduce){.dot.live{animation:none}}
+
+.speed{text-align:center;padding-block:6px 2px}
+.speedValue{
+  font-family:var(--display);font-weight:700;font-size:min(50vw,42vh);line-height:.9;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;transition:opacity .3s;
+}
+.speedValue.stale{opacity:.35}
+.speedUnit{font-family:var(--display);font-weight:500;font-size:clamp(22px,7vw,40px);color:var(--accent);letter-spacing:.06em;margin-top:6px}
+.speedNote{color:var(--muted);font-size:14px;margin-top:6px;min-height:1.4em}
+@media (orientation:landscape) and (max-height:520px){
+  .speedValue{font-size:min(30vw,50vh)}
+}
+
+.controls{display:flex;gap:10px;flex-wrap:wrap}
+button{
+  flex:1 1 120px;font:600 16px var(--body);padding:14px 16px;border-radius:10px;
+  border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer;touch-action:manipulation;
+}
+button.primary{background:var(--accent);color:#1a1200;border-color:transparent}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.panel h2{margin:0 0 10px;font:600 12px var(--body);text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+dl{margin:0;display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+dl>div{min-width:0}
+dt{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+dd{margin:0;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+dd.small{font-size:15px;font-weight:400}
+.full{grid-column:1/-1}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.msg{font-size:14px;color:var(--muted);margin:0 0 8px}
+.msg.bad{color:var(--bad)}.msg.warn{color:var(--warn)}
+.fine{font-size:13px;color:var(--muted);margin:10px 0 0;line-height:1.45}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="bar">
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">GPS inactif</span></div>
+    <div id="age"></div>
+  </header>
+
+  <section class="speed">
+    <div class="speedValue" id="speed">—</div>
+    <div class="speedUnit">km/h</div>
+    <div class="speedNote" id="speedNote">Appuie sur Démarrer</div>
+  </section>
+
+  <section class="controls">
+    <button id="btnStart" class="primary" type="button">Démarrer</button>
+    <button id="btnReset" type="button">Réinitialiser</button>
+    <button id="btnFull" type="button">Plein écran</button>
+  </section>
+
+  <section class="panel">
+    <h2>Position captée</h2>
+    <p class="msg bad" id="err" hidden></p>
+    <dl>
+      <div><dt>Latitude</dt><dd id="lat">—</dd></div>
+      <div><dt>Longitude</dt><dd id="lon">—</dd></div>
+      <div><dt>Précision (rayon)</dt><dd id="acc">—</dd></div>
+      <div><dt>Vitesse brute API</dt><dd id="speedRaw">—</dd></div>
+      <div><dt>Altitude</dt><dd id="alt">—</dd></div>
+      <div><dt>Précision altitude</dt><dd id="altAcc">—</dd></div>
+      <div><dt>Cap</dt><dd id="heading">—</dd></div>
+      <div><dt>Heure du fix</dt><dd id="ts">—</dd></div>
+      <div><dt>Cadence (médiane)</dt><dd id="interval">—</dd></div>
+      <div><dt>Fixes reçus</dt><dd id="fixes">0</dd></div>
+      <div class="full"><dt>Source estimée</dt><dd id="source" class="small">—</dd></div>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Trajet</h2>
+    <dl>
+      <div><dt>Vitesse max</dt><dd id="max">—</dd></div>
+      <div><dt>Moyenne en mouvement</dt><dd id="avg">—</dd></div>
+      <div><dt>Distance (approx.)</dt><dd id="dist">—</dd></div>
+      <div><dt>Durée</dt><dd id="dur">—</dd></div>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Diagnostic</h2>
+    <dl>
+      <div><dt>Contexte sécurisé</dt><dd id="secure" class="small">—</dd></div>
+      <div><dt>Permission position</dt><dd id="perm" class="small">—</dd></div>
+      <div class="full"><dt>Écran</dt><dd id="wake" class="small">—</dd></div>
+    </dl>
+    <p class="fine">La source est estimée d’après la précision et la présence de vitesse / cap / altitude dans le fix : le navigateur reçoit une position déjà fusionnée par le système et n’expose ni la constellation (GPS, Galileo, GLONASS, BeiDou), ni le nombre de satellites, ni le SNR ou le HDOP.</p>
+    <p class="fine">Altitude brute de l’API : sur Android, au-dessus de l’ellipsoïde WGS84 ; sur iOS, au-dessus du niveau de la mer. Vitesse : fournie par le récepteur quand elle existe, sinon calculée entre deux positions successives.</p>
+  </section>
+</main>
+
+<script>
+(function(){
+'use strict';
+var $=function(id){return document.getElementById(id);};
+var el={speed:$('speed'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
+  lat:$('lat'),lon:$('lon'),acc:$('acc'),alt:$('alt'),altAcc:$('altAcc'),heading:$('heading'),speedRaw:$('speedRaw'),
+  ts:$('ts'),interval:$('interval'),fixes:$('fixes'),source:$('source'),
+  max:$('max'),avg:$('avg'),dist:$('dist'),dur:$('dur'),
+  secure:$('secure'),perm:$('perm'),wake:$('wake'),err:$('err'),
+  btnStart:$('btnStart'),btnReset:$('btnReset'),btnFull:$('btnFull')};
+
+var S={watchId:null,running:false,last:null,fixes:0,maxKmh:0,dist:0,moveMs:0,startAt:null,intervals:[],ema:null,wakeLock:null};
+var CARD=['N','NE','E','SE','S','SO','O','NO'];
+var ERR={
+  1:['Accès à la position refusé. Autorise la localisation pour cette page dans les réglages du navigateur, puis relance.','bad'],
+  2:['Position indisponible : vérifie que la localisation est activée sur le téléphone et sors à ciel dégagé.','bad'],
+  3:['Aucun fix reçu depuis 20 s. Le GPS continue de chercher.','warn']
+};
+
+function nf(n,d){
+  if(n==null||Number.isNaN(n))return '—';
+  return Number(n).toLocaleString('fr-FR',{minimumFractionDigits:d,maximumFractionDigits:d});
+}
+function toRad(x){return x*Math.PI/180;}
+function haversine(a,b){
+  var R=6371008.8;
+  var dLat=toRad(b.latitude-a.latitude),dLon=toRad(b.longitude-a.longitude);
+  var h=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(toRad(a.latitude))*Math.cos(toRad(b.latitude))*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(h)));
+}
+function median(a){
+  if(!a.length)return null;
+  var s=a.slice().sort(function(x,y){return x-y;});var m=s.length>>1;
+  return s.length%2?s[m]:(s[m-1]+s[m])/2;
+}
+function fmtDur(ms){
+  var s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=s%60;
+  return (h?h+' h ':'')+m+' min '+(r<10?'0':'')+r+' s';
+}
+function setStatus(cls,text){el.dot.className='dot'+(cls?' '+cls:'');el.statusText.textContent=text;}
+
+function estimateSource(c){
+  var acc=c.accuracy;
+  var dyn=(c.speed!=null)||(c.heading!=null&&!Number.isNaN(c.heading));
+  var alt=c.altitude!=null;
+  if(acc<=20&&(dyn||alt))return ['Satellites (GNSS), très probable','ok'];
+  if(acc<=50)return ['GNSS probable, ou Wi-Fi précis','ok'];
+  if(acc<=300)return ['Wi-Fi / réseau, probable','warn'];
+  return ['Réseau cellulaire, probable','bad'];
+}
+
+function renderTrip(){
+  el.max.textContent=S.fixes?nf(S.maxKmh,0)+' km/h':'—';
+  el.avg.textContent=S.moveMs>0?nf(S.dist/(S.moveMs/1000)*3.6,0)+' km/h':'—';
+  el.dist.textContent=S.fixes?(S.dist>=1000?nf(S.dist/1000,2)+' km':nf(S.dist,0)+' m'):'—';
+  el.dur.textContent=(S.startAt&&S.last)?fmtDur(S.last.t-S.startAt):'—';
+}
+
+function onFix(pos){
+  var c=pos.coords,t=pos.timestamp,prev=S.last;
+  S.fixes++;
+  if(!S.startAt)S.startAt=t;
+  if(prev&&t>prev.t){
+    S.intervals.push(t-prev.t);
+    if(S.intervals.length>20)S.intervals.shift();
+  }
+
+  var kmh=null,src;
+  if(c.speed!=null&&!Number.isNaN(c.speed)){
+    kmh=Math.max(0,c.speed)*3.6;S.ema=null;
+    src='Vitesse fournie par le récepteur GPS';
+  }else if(prev&&t>prev.t){
+    var v=haversine(prev,c)/((t-prev.t)/1000)*3.6;
+    S.ema=(S.ema==null)?v:S.ema*0.5+v*0.5;
+    kmh=S.ema;
+    src='Vitesse calculée entre deux positions'+(c.accuracy>30?' (peu fiable : précision '+nf(c.accuracy,0)+' m)':'');
+  }else{
+    src='En attente d’une 2e position pour calculer la vitesse';
+  }
+
+  if(prev&&t>prev.t&&c.accuracy<=50&&prev.accuracy<=50){
+    var d=haversine(prev,c);
+    var moving=(c.speed!=null)?(c.speed>=0.8):(d>Math.max(5,c.accuracy));
+    if(moving){S.dist+=d;S.moveMs+=(t-prev.t);}
+  }
+  if(kmh!=null&&c.accuracy<=30&&kmh>S.maxKmh)S.maxKmh=kmh;
+
+  S.last={latitude:c.latitude,longitude:c.longitude,accuracy:c.accuracy,t:t};
+
+  el.speed.textContent=(kmh==null)?'—':String(Math.round(kmh));
+  el.speed.classList.remove('stale');
+  el.note.textContent=src;
+  el.lat.textContent=nf(c.latitude,6);
+  el.lon.textContent=nf(c.longitude,6);
+  el.acc.textContent='± '+nf(c.accuracy,0)+' m';
+  el.speedRaw.textContent=(c.speed==null)?'non fournie':nf(c.speed,2)+' m/s';
+  el.alt.textContent=(c.altitude==null)?'non fournie':nf(c.altitude,0)+' m';
+  el.altAcc.textContent=(c.altitudeAccuracy==null)?'—':'± '+nf(c.altitudeAccuracy,0)+' m';
+  el.heading.textContent=(c.heading==null||Number.isNaN(c.heading))?'—':nf(c.heading,0)+'° '+CARD[Math.round(c.heading/45)%8];
+  el.ts.textContent=new Date(t).toLocaleTimeString('fr-FR',{hour12:false});
+  el.interval.textContent=S.intervals.length?nf(median(S.intervals)/1000,1)+' s':'—';
+  el.fixes.textContent=String(S.fixes);
+  var est=estimateSource(c);
+  el.source.textContent=est[0];el.source.className='small '+est[1];
+  renderTrip();
+  el.err.hidden=true;
+  setStatus('live','GPS actif');
+}
+
+function onErr(e){
+  var m=ERR[e.code]||[e.message||'Erreur inconnue','bad'];
+  el.err.textContent=m[0];el.err.className='msg '+m[1];el.err.hidden=false;
+  setStatus(m[1]==='bad'?'bad':'stale',m[1]==='bad'?'Erreur GPS':'Recherche…');
+  if(e.code===1)stop();
+}
+
+function start(){
+  if(!('geolocation' in navigator)){
+    el.err.textContent='Ce navigateur n’a pas de géolocalisation.';el.err.className='msg bad';el.err.hidden=false;return;
+  }
+  if(S.running)return;
+  S.running=true;
+  S.watchId=navigator.geolocation.watchPosition(onFix,onErr,{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+  setStatus('stale','Recherche de satellites…');
+  el.note.textContent='Recherche du signal, sors à ciel dégagé';
+  el.btnStart.textContent='Pause';
+  requestWakeLock();
+}
+function stop(){
+  if(S.watchId!=null)navigator.geolocation.clearWatch(S.watchId);
+  S.watchId=null;S.running=false;
+  el.btnStart.textContent='Reprendre';
+  setStatus('','GPS en pause');
+  releaseWakeLock();
+}
+function reset(){
+  S.fixes=0;S.maxKmh=0;S.dist=0;S.moveMs=0;S.startAt=null;S.intervals=[];S.ema=null;
+  el.fixes.textContent='0';el.interval.textContent='—';
+  renderTrip();
+}
+
+function requestWakeLock(){
+  if(!('wakeLock' in navigator)){el.wake.textContent='maintien allumé non pris en charge : désactive la mise en veille';el.wake.className='small warn';return;}
+  navigator.wakeLock.request('screen').then(function(lock){
+    S.wakeLock=lock;
+    el.wake.textContent='maintenu allumé pendant la mesure';el.wake.className='small ok';
+    lock.addEventListener('release',function(){
+      S.wakeLock=null;
+      if(S.running){el.wake.textContent='maintien allumé relâché par le système';el.wake.className='small warn';}
+    });
+  }).catch(function(){
+    S.wakeLock=null;
+    el.wake.textContent='maintien allumé refusé : désactive la mise en veille';el.wake.className='small warn';
+  });
+}
+function releaseWakeLock(){
+  if(S.wakeLock){S.wakeLock.release().catch(function(){});S.wakeLock=null;}
+  el.wake.textContent='veille normale';el.wake.className='small';
+}
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='visible'&&S.running&&!S.wakeLock)requestWakeLock();
+});
+
+function checkPerm(){
+  if(!navigator.permissions||!navigator.permissions.query){el.perm.textContent='état non consultable sur ce navigateur';return;}
+  navigator.permissions.query({name:'geolocation'}).then(function(p){
+    var map={granted:['accordée','ok'],prompt:['demandée au clic sur Démarrer','warn'],denied:['refusée : à réactiver dans les réglages du site','bad']};
+    var show=function(){var m=map[p.state]||[p.state,''];el.perm.textContent=m[0];el.perm.className='small '+m[1];};
+    show();p.onchange=show;
+  }).catch(function(){el.perm.textContent='état non consultable sur ce navigateur';});
+}
+
+if(window.isSecureContext){
+  el.secure.textContent='oui';el.secure.className='small ok';
+}else{
+  el.secure.textContent='NON : page servie en HTTP ou ouverte en local, la géolocalisation sera refusée. Sers-la en HTTPS.';
+  el.secure.className='small bad';
+}
+el.wake.textContent='veille normale';
+checkPerm();
+
+if(!document.documentElement.requestFullscreen){
+  el.btnFull.hidden=true;
+}else{
+  el.btnFull.addEventListener('click',function(){
+    if(document.fullscreenElement){document.exitFullscreen().catch(function(){});return;}
+    document.documentElement.requestFullscreen().catch(function(){});
+  });
+  document.addEventListener('fullscreenchange',function(){
+    el.btnFull.textContent=document.fullscreenElement?'Quitter plein écran':'Plein écran';
+  });
+}
+
+el.btnStart.addEventListener('click',function(){if(S.running)stop();else start();});
+el.btnReset.addEventListener('click',reset);
+
+setInterval(function(){
+  if(!S.last){el.age.textContent='';return;}
+  var age=Date.now()-S.last.t;
+  el.age.textContent='dernier fix : '+(age<1000?'< 1 s':nf(age/1000,0)+' s');
+  if(S.running){
+    if(age>20000){setStatus('bad','Signal perdu');el.speed.classList.add('stale');}
+    else if(age>5000){setStatus('stale','Signal faible');el.speed.classList.add('stale');}
+  }
+},500);
+})();
+</script>
+</body>
+</html>
