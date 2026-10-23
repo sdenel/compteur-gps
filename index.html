@@ -126,6 +126,14 @@ dd.small{font-family:var(--body);font-size:15px;font-weight:400}
       </div>
     </div>
     <div class="altLabel">Altitude</div>
+    <div class="big alt">
+      <div class="altValue"><span id="distBig">—</span><span class="altUnit"> m</span></div>
+      <div class="side">
+        <div class="sideItem"><span class="sideLabel">durée</span><span class="sideVal" id="distDur">—</span></div>
+        <div class="sideItem"><span class="sideLabel">en mvt</span><span class="sideVal" id="distMove">—</span></div>
+      </div>
+    </div>
+    <div class="altLabel">Distance parcourue</div>
     <div class="speedNote" id="speedNote">Démarrage du GPS…</div>
   </section>
 
@@ -183,7 +191,7 @@ dd.small{font-family:var(--body);font-size:15px;font-weight:400}
 'use strict';
 var $=function(id){return document.getElementById(id);};
 var el={speed:$('speed'),speedInt:$('speedInt'),speedDec:$('speedDec'),speedMax:$('speedMax'),speedMin:$('speedMin'),speedAvg:$('speedAvg'),
-  altInt:$('altInt'),altDec:$('altDec'),altMax:$('altMax'),altMin:$('altMin'),altDelta:$('altDelta'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
+  altInt:$('altInt'),altDec:$('altDec'),distBig:$('distBig'),distDur:$('distDur'),distMove:$('distMove'),altMax:$('altMax'),altMin:$('altMin'),altDelta:$('altDelta'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
   lat:$('lat'),lon:$('lon'),acc:$('acc'),alt:$('alt'),altAcc:$('altAcc'),geoid:$('geoid'),altMslDetail:$('altMslDetail'),
   altLabel:document.querySelector('.altLabel'),date:$('date'),time:$('time'),geoidStatus:$('geoidStatus'),chkMsl:$('chkMsl'),heading:$('heading'),speedRaw:$('speedRaw'),
   ts:$('ts'),interval:$('interval'),fixes:$('fixes'),source:$('source'),
@@ -219,6 +227,11 @@ function median(a){
 function fmtDur(ms){
   var s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=s%60;
   return (h?h+' h ':'')+m+' min '+(r<10?'0':'')+r+' s';
+}
+function fmtClock(ms){
+  var s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor(s%3600/60),r=s%60;
+  var mm=(h?(m<10?'0':''):'')+m,ss=(r<10?'0':'')+r;
+  return (h?h+':':'')+mm+':'+ss;
 }
 function setStatus(cls,text){el.dot.className='dot'+(cls?' '+cls:'');el.statusText.textContent=text;}
 
@@ -282,6 +295,9 @@ function renderExtremes(){
   /* moyenne du trajet = distance / temps écoulé depuis le premier fix, arrêts compris */
   var elapsed=(S.startAt&&S.last)?(S.last.t-S.startAt)/1000:0;
   el.speedAvg.textContent=(elapsed>=2)?nf(S.dist/elapsed*3.6,1):'—';
+  el.distBig.textContent=S.fixes?nf(S.dist,0):'—';
+  el.distDur.textContent=S.fixes?fmtClock(elapsed*1000):'—';
+  el.distMove.textContent=S.fixes?fmtClock(S.moveMs):'—';
 }
 function renderTrip(){
   el.avg.textContent=S.moveMs>0?nf(S.dist/(S.moveMs/1000)*3.6,0)+' km/h':'—';
