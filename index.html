@@ -50,14 +50,15 @@ body{
 }
 .speedValue .dec{font-size:.45em;font-weight:500}
 .speedValue.stale{opacity:.35}
-.side{display:grid;gap:8px;text-align:left}
+.side{display:grid;gap:6px;text-align:left}
 .sideItem{display:grid;line-height:1;gap:2px}
 .sideLabel{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;opacity:.7}
-.sideVal{font-family:var(--display);font-weight:600;font-size:clamp(18px,5.5vw,28px);font-variant-numeric:tabular-nums;white-space:nowrap}
+.sideLabel.delta{font-size:13px;letter-spacing:0}
+.sideVal{font-family:var(--display);font-weight:600;font-size:clamp(17px,5vw,26px);font-variant-numeric:tabular-nums;white-space:nowrap}
 .alt .sideVal{font-size:clamp(15px,4.2vw,22px)}
 .speedUnit{font-family:var(--display);font-weight:500;font-size:clamp(22px,7vw,40px);letter-spacing:.06em;margin-top:4px}
 .alt{margin-top:10px}
-.altValue{font-family:var(--display);font-weight:700;font-size:clamp(36px,12vw,64px);line-height:1;letter-spacing:-.01em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.altValue{font-family:var(--display);font-weight:700;font-size:clamp(44px,15vw,72px);line-height:1;letter-spacing:-.01em;font-variant-numeric:tabular-nums;white-space:nowrap}
 .altValue .altUnit{font-size:.45em;font-weight:500;letter-spacing:.06em}
 .altLabel{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;opacity:.7;margin-top:2px}
 .speedNote{color:var(--muted);font-size:14px;margin-top:8px;min-height:1.4em}
@@ -103,6 +104,7 @@ dd.small{font-size:15px;font-weight:400}
       <div class="side">
         <div class="sideItem"><span class="sideLabel">max</span><span class="sideVal" id="speedMax">—</span></div>
         <div class="sideItem"><span class="sideLabel">min</span><span class="sideVal" id="speedMin">—</span></div>
+        <div class="sideItem"><span class="sideLabel">moy</span><span class="sideVal" id="speedAvg">—</span></div>
       </div>
     </div>
     <div class="speedUnit">km/h</div>
@@ -111,6 +113,7 @@ dd.small{font-size:15px;font-weight:400}
       <div class="side">
         <div class="sideItem"><span class="sideLabel">max</span><span class="sideVal" id="altMax">—</span></div>
         <div class="sideItem"><span class="sideLabel">min</span><span class="sideVal" id="altMin">—</span></div>
+        <div class="sideItem"><span class="sideLabel delta">Δ</span><span class="sideVal" id="altDelta">—</span></div>
       </div>
     </div>
     <div class="altLabel">Altitude</div>
@@ -118,9 +121,9 @@ dd.small{font-size:15px;font-weight:400}
   </section>
 
   <section class="controls">
-    <button id="btnStart" class="primary" type="button">Démarrer</button>
-    <button id="btnReset" type="button">Réinitialiser</button>
-    <button id="btnFull" type="button">Plein écran</button>
+    <button id="btnStart" class="primary" type="button">▶️ Démarrer</button>
+    <button id="btnReset" type="button">🔄 Réinitialiser</button>
+    <button id="btnFull" type="button">🔲 Plein écran</button>
   </section>
 
   <section class="panel">
@@ -170,8 +173,8 @@ dd.small{font-size:15px;font-weight:400}
 (function(){
 'use strict';
 var $=function(id){return document.getElementById(id);};
-var el={speed:$('speed'),speedInt:$('speedInt'),speedDec:$('speedDec'),speedMax:$('speedMax'),speedMin:$('speedMin'),
-  altBig:$('altBig'),altMax:$('altMax'),altMin:$('altMin'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
+var el={speed:$('speed'),speedInt:$('speedInt'),speedDec:$('speedDec'),speedMax:$('speedMax'),speedMin:$('speedMin'),speedAvg:$('speedAvg'),
+  altBig:$('altBig'),altMax:$('altMax'),altMin:$('altMin'),altDelta:$('altDelta'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
   lat:$('lat'),lon:$('lon'),acc:$('acc'),alt:$('alt'),altAcc:$('altAcc'),geoid:$('geoid'),altMslDetail:$('altMslDetail'),
   altLabel:document.querySelector('.altLabel'),geoidStatus:$('geoidStatus'),chkMsl:$('chkMsl'),heading:$('heading'),speedRaw:$('speedRaw'),
   ts:$('ts'),interval:$('interval'),fixes:$('fixes'),source:$('source'),
@@ -265,6 +268,10 @@ function renderExtremes(){
   el.speedMin.textContent=(S.minKmh==null)?'—':nf(S.minKmh,1);
   el.altMax.textContent=(S.altMax==null)?'—':nf(S.altMax,1);
   el.altMin.textContent=(S.altMin==null)?'—':nf(S.altMin,1);
+  el.altDelta.textContent=(S.altMax==null||S.altMin==null)?'—':nf(S.altMax-S.altMin,1);
+  /* moyenne du trajet = distance / temps écoulé depuis le premier fix, arrêts compris */
+  var elapsed=(S.startAt&&S.last)?(S.last.t-S.startAt)/1000:0;
+  el.speedAvg.textContent=(elapsed>=2)?nf(S.dist/elapsed*3.6,1):'—';
 }
 function renderTrip(){
   el.avg.textContent=S.moveMs>0?nf(S.dist/(S.moveMs/1000)*3.6,0)+' km/h':'—';
@@ -366,13 +373,13 @@ function start(){
   S.watchId=navigator.geolocation.watchPosition(onFix,onErr,{enableHighAccuracy:true,maximumAge:0,timeout:20000});
   setStatus('stale','Recherche de satellites…');
   el.note.textContent='Recherche du signal, sors à ciel dégagé';
-  el.btnStart.textContent='Pause';
+  el.btnStart.textContent='⏸️ Pause';
   requestWakeLock();
 }
 function stop(){
   if(S.watchId!=null)navigator.geolocation.clearWatch(S.watchId);
   S.watchId=null;S.running=false;
-  el.btnStart.textContent='Reprendre';
+  el.btnStart.textContent='▶️ Reprendre';
   setStatus('','GPS en pause');
   releaseWakeLock();
 }
@@ -431,7 +438,7 @@ if(!document.documentElement.requestFullscreen){
     document.documentElement.requestFullscreen().catch(function(){});
   });
   document.addEventListener('fullscreenchange',function(){
-    el.btnFull.textContent=document.fullscreenElement?'Quitter plein écran':'Plein écran';
+    el.btnFull.textContent=document.fullscreenElement?'🔳 Quitter plein écran':'🔲 Plein écran';
   });
 }
 
