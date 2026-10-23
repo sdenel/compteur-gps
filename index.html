@@ -15,7 +15,7 @@
 /* Layout : tableau de bord une colonne — la vitesse occupe le haut de l'écran, les données dessous */
 :root{
   --bg:#0b1020; --panel:#121a2e; --line:#243052;
-  --fg:#f3f1ea; --muted:#9aa3b8; --accent:#ffb347;
+  --fg:#f3f1ea; --white:#ffffff; --muted:#9aa3b8; --accent:#ffb347;
   --ok:#5fd68a; --warn:#ffb347; --bad:#ff6b6b;
   --display:"Barlow Condensed","Arial Narrow",Impact,sans-serif;
   --body:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -42,16 +42,21 @@ body{
 @keyframes ping{0%{box-shadow:0 0 0 0 rgba(95,214,138,.6)}100%{box-shadow:0 0 0 10px rgba(95,214,138,0)}}
 @media (prefers-reduced-motion:reduce){.dot.live{animation:none}}
 
-.speed{text-align:center;padding-block:6px 2px}
+.speed{text-align:center;padding-block:6px 2px;color:var(--white)}
 .speedValue{
-  font-family:var(--display);font-weight:700;font-size:min(50vw,42vh);line-height:.9;letter-spacing:-.02em;
-  font-variant-numeric:tabular-nums;transition:opacity .3s;
+  font-family:var(--display);font-weight:700;font-size:min(46vw,38vh);line-height:.9;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;transition:opacity .3s;white-space:nowrap;
 }
+.speedValue .dec{font-size:.45em;font-weight:500}
 .speedValue.stale{opacity:.35}
-.speedUnit{font-family:var(--display);font-weight:500;font-size:clamp(22px,7vw,40px);color:var(--accent);letter-spacing:.06em;margin-top:6px}
-.speedNote{color:var(--muted);font-size:14px;margin-top:6px;min-height:1.4em}
+.speedUnit{font-family:var(--display);font-weight:500;font-size:clamp(22px,7vw,40px);letter-spacing:.06em;margin-top:6px}
+.altValue{font-family:var(--display);font-weight:700;font-size:clamp(40px,14vw,80px);line-height:1;letter-spacing:-.01em;font-variant-numeric:tabular-nums;margin-top:10px;white-space:nowrap}
+.altValue .altUnit{font-size:.45em;font-weight:500;letter-spacing:.06em}
+.altLabel{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;opacity:.7;margin-top:2px}
+.speedNote{color:var(--muted);font-size:14px;margin-top:8px;min-height:1.4em}
 @media (orientation:landscape) and (max-height:520px){
-  .speedValue{font-size:min(30vw,50vh)}
+  .speedValue{font-size:min(26vw,44vh)}
+  .altValue{font-size:clamp(28px,8vw,56px)}
 }
 
 .controls{display:flex;gap:10px;flex-wrap:wrap}
@@ -84,8 +89,10 @@ dd.small{font-size:15px;font-weight:400}
   </header>
 
   <section class="speed">
-    <div class="speedValue" id="speed">—</div>
+    <div class="speedValue" id="speed"><span id="speedInt">—</span><span class="dec" id="speedDec"></span></div>
     <div class="speedUnit">km/h</div>
+    <div class="altValue"><span id="altBig">—</span><span class="altUnit"> m</span></div>
+    <div class="altLabel">Altitude</div>
     <div class="speedNote" id="speedNote">Appuie sur Démarrer</div>
   </section>
 
@@ -139,7 +146,7 @@ dd.small{font-size:15px;font-weight:400}
 (function(){
 'use strict';
 var $=function(id){return document.getElementById(id);};
-var el={speed:$('speed'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
+var el={speed:$('speed'),speedInt:$('speedInt'),speedDec:$('speedDec'),altBig:$('altBig'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
   lat:$('lat'),lon:$('lon'),acc:$('acc'),alt:$('alt'),altAcc:$('altAcc'),heading:$('heading'),speedRaw:$('speedRaw'),
   ts:$('ts'),interval:$('interval'),fixes:$('fixes'),source:$('source'),
   max:$('max'),avg:$('avg'),dist:$('dist'),dur:$('dur'),
@@ -224,14 +231,20 @@ function onFix(pos){
 
   S.last={latitude:c.latitude,longitude:c.longitude,accuracy:c.accuracy,t:t};
 
-  el.speed.textContent=(kmh==null)?'—':String(Math.round(kmh));
+  if(kmh==null){
+    el.speedInt.textContent='—';el.speedDec.textContent='';
+  }else{
+    var parts=nf(kmh,1).split(',');
+    el.speedInt.textContent=parts[0];el.speedDec.textContent=','+(parts[1]||'0');
+  }
+  el.altBig.textContent=(c.altitude==null||Number.isNaN(c.altitude))?'—':nf(c.altitude,1);
   el.speed.classList.remove('stale');
   el.note.textContent=src;
   el.lat.textContent=nf(c.latitude,6);
   el.lon.textContent=nf(c.longitude,6);
   el.acc.textContent='± '+nf(c.accuracy,0)+' m';
   el.speedRaw.textContent=(c.speed==null)?'non fournie':nf(c.speed,2)+' m/s';
-  el.alt.textContent=(c.altitude==null)?'non fournie':nf(c.altitude,0)+' m';
+  el.alt.textContent=(c.altitude==null)?'non fournie':nf(c.altitude,1)+' m';
   el.altAcc.textContent=(c.altitudeAccuracy==null)?'—':'± '+nf(c.altitudeAccuracy,0)+' m';
   el.heading.textContent=(c.heading==null||Number.isNaN(c.heading))?'—':nf(c.heading,0)+'° '+CARD[Math.round(c.heading/45)%8];
   el.ts.textContent=new Date(t).toLocaleTimeString('fr-FR',{hour12:false});
