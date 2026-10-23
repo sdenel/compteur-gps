@@ -62,7 +62,7 @@ body{
 .speedUnit{font-family:var(--display);font-weight:400;font-size:clamp(20px,6vw,34px);letter-spacing:.04em;margin-top:4px}
 .alt{margin-top:10px}
 .altValue{font-family:var(--display);font-weight:700;font-size:clamp(38px,12.5vw,60px);line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums;white-space:nowrap}
-.altValue .altUnit{font-size:.45em;font-weight:400;letter-spacing:0}
+.altValue .dec,.altValue .altUnit{font-size:.45em;font-weight:400;letter-spacing:0}
 .altLabel{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;opacity:.7;margin-top:2px}
 .speedNote{color:var(--muted);font-size:14px;margin-top:8px;min-height:1.4em}
 @media (orientation:landscape) and (max-height:520px){
@@ -118,7 +118,7 @@ dd.small{font-family:var(--body);font-size:15px;font-weight:400}
     </div>
     <div class="speedUnit">km/h</div>
     <div class="big alt">
-      <div class="altValue"><span id="altBig">—</span><span class="altUnit"> m</span></div>
+      <div class="altValue"><span id="altInt">—</span><span class="dec" id="altDec"></span><span class="altUnit"> m</span></div>
       <div class="side">
         <div class="sideItem"><span class="sideLabel">max</span><span class="sideVal" id="altMax">—</span></div>
         <div class="sideItem"><span class="sideLabel">min</span><span class="sideVal" id="altMin">—</span></div>
@@ -183,7 +183,7 @@ dd.small{font-family:var(--body);font-size:15px;font-weight:400}
 'use strict';
 var $=function(id){return document.getElementById(id);};
 var el={speed:$('speed'),speedInt:$('speedInt'),speedDec:$('speedDec'),speedMax:$('speedMax'),speedMin:$('speedMin'),speedAvg:$('speedAvg'),
-  altBig:$('altBig'),altMax:$('altMax'),altMin:$('altMin'),altDelta:$('altDelta'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
+  altInt:$('altInt'),altDec:$('altDec'),altMax:$('altMax'),altMin:$('altMin'),altDelta:$('altDelta'),note:$('speedNote'),dot:$('dot'),statusText:$('statusText'),age:$('age'),
   lat:$('lat'),lon:$('lon'),acc:$('acc'),alt:$('alt'),altAcc:$('altAcc'),geoid:$('geoid'),altMslDetail:$('altMslDetail'),
   altLabel:document.querySelector('.altLabel'),date:$('date'),time:$('time'),geoidStatus:$('geoidStatus'),chkMsl:$('chkMsl'),heading:$('heading'),speedRaw:$('speedRaw'),
   ts:$('ts'),interval:$('interval'),fixes:$('fixes'),source:$('source'),
@@ -343,7 +343,12 @@ function onFix(pos){
     var parts=nf(kmh,1).split('.');
     el.speedInt.textContent=parts[0];el.speedDec.textContent='.'+(parts[1]||'0');
   }
-  el.altBig.textContent=(altMsl==null)?'—':nf(altMsl,1);
+  if(altMsl==null){
+    el.altInt.textContent='—';el.altDec.textContent='';
+  }else{
+    var ap=nf(altMsl,1).split('.');
+    el.altInt.textContent=ap[0];el.altDec.textContent='.'+(ap[1]||'0');
+  }
   el.altLabel.textContent={corrigée:'Altitude carte (niveau de la mer, EGM96)',native:'Altitude carte (niveau de la mer, fournie par l’OS)',ellipsoide:'Altitude ellipsoïde WGS84 (géoïde non chargé)',absente:'Altitude'}[altMode];
   el.geoid.textContent=(N==null)?'—':(N>=0?'+':'')+nf(N,1)+' m';
   el.altMslDetail.textContent=(altMsl==null)?'—':nf(altMsl,1)+' m'+(altMode==='ellipsoide'?' (non corrigée)':'');
