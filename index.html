@@ -80,6 +80,10 @@ button{
 }
 button .ico{font-family:"Apple Symbols","Segoe UI Symbol","Noto Sans Symbols","Noto Sans Symbols2","DejaVu Sans",var(--body);font-size:24px;line-height:1;font-variant-emoji:text}
 button .lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
+.installWrap{display:grid;gap:8px}
+.install{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:12px;padding:12px 16px;border-color:var(--accent)}
+.install .ico{font-size:22px}
+.install .lbl{font-size:12px;white-space:normal}
 button.primary{background:var(--accent);color:#1a1200;border-color:transparent}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
@@ -150,6 +154,11 @@ dd.small{font-family:var(--body);font-size:15px;font-weight:400}
     <button id="btnFull" type="button"><span class="ico" id="btnFullIco">&#x21F2;&#xFE0E;</span><span class="lbl" id="btnFullLbl">Plein écran</span></button>
   </section>
 
+  <section class="installWrap" id="installWrap" hidden>
+    <button id="btnInstall" class="install" type="button"><span class="ico">&#x2302;&#xFE0E;</span><span class="lbl">Ajouter à l’écran d’accueil</span></button>
+    <p class="msg" id="installHelp" hidden></p>
+  </section>
+
   <section class="panel">
     <h2>Position captée</h2>
     <p class="msg bad" id="err" hidden></p>
@@ -187,6 +196,7 @@ dd.small{font-family:var(--body);font-size:15px;font-weight:400}
       <div class="full"><dt>Écran</dt><dd id="wake" class="small">—</dd></div>
       <div class="full"><dt>Grille géoïde</dt><dd id="geoidStatus" class="small">chargement…</dd></div>
       <div class="full"><dt>Hors ligne</dt><dd id="offline" class="small">—</dd></div>
+      <div class="full"><dt>Écran d’accueil</dt><dd id="installState" class="small">—</dd></div>
     </dl>
     <label class="opt"><input type="checkbox" id="chkMsl"> L’altitude brute est déjà au niveau de la mer (iOS) : ne pas la corriger</label>
     <p class="fine">La source est estimée d’après la précision et la présence de vitesse / cap / altitude dans le fix : le navigateur reçoit une position déjà fusionnée par le système et n’expose ni la constellation (GPS, Galileo, GLONASS, BeiDou), ni le nombre de satellites, ni le SNR ou le HDOP.</p>
@@ -212,7 +222,8 @@ var el={speed:$('speed'),speedInt:$('speedInt'),speedDec:$('speedDec'),speedMax:
   avg:$('avg'),dist:$('dist'),dur:$('dur'),
   secure:$('secure'),perm:$('perm'),wake:$('wake'),err:$('err'),
   btnStart:$('btnStart'),btnStartIco:$('btnStartIco'),btnStartLbl:$('btnStartLbl'),btnReset:$('btnReset'),
-  btnFull:$('btnFull'),btnFullIco:$('btnFullIco'),btnFullLbl:$('btnFullLbl')};
+  btnFull:$('btnFull'),btnFullIco:$('btnFullIco'),btnFullLbl:$('btnFullLbl'),
+  installWrap:$('installWrap'),btnInstall:$('btnInstall'),installHelp:$('installHelp'),installState:$('installState')};
 
 var S={watchId:null,running:false,last:null,fixes:0,maxKmh:null,minKmh:null,altMax:null,altMin:null,dist:0,moveMs:0,startAt:null,intervals:[],ema:null,wakeLock:null};
 var CARD=['N','NE','E','SE','S','SO','O','NO'];
@@ -489,6 +500,41 @@ if(!document.documentElement.requestFullscreen){
 
 el.btnStart.addEventListener('click',function(){if(S.running)stop();else start();});
 el.btnReset.addEventListener('click',reset);
+
+/* Écran d'accueil : invite native quand le navigateur la propose (Chrome/Edge/Samsung sur Android), sinon marche à suivre */
+var INSTALL={prompt:null,standalone:(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true};
+function installHelp(text,cls){el.installHelp.textContent=text;el.installHelp.className='msg '+(cls||'');el.installHelp.hidden=false;}
+function renderInstall(){
+  if(INSTALL.standalone){
+    el.installWrap.hidden=true;
+    el.installState.textContent='installée, ouverte en mode autonome';el.installState.className='small ok';
+    return;
+  }
+  el.installWrap.hidden=false;
+  el.installState.textContent=INSTALL.prompt?'installable : bouton « Ajouter à l’écran d’accueil »':'ouverte dans le navigateur';
+  el.installState.className='small';
+}
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();INSTALL.prompt=e;renderInstall();});
+window.addEventListener('appinstalled',function(){
+  INSTALL.prompt=null;
+  installHelp('Installée. Ouvre « Compteur GPS » depuis l’écran d’accueil : plein écran, sans barre d’adresse.','ok');
+  el.installState.textContent='installée';el.installState.className='small ok';
+});
+el.btnInstall.addEventListener('click',function(){
+  if(INSTALL.prompt){
+    var p=INSTALL.prompt;INSTALL.prompt=null;
+    p.prompt();
+    (p.userChoice||Promise.resolve({outcome:'unknown'})).then(function(r){
+      if(r.outcome!=='accepted')installHelp('Installation annulée. Tu peux aussi passer par le menu du navigateur (⋮) → « Ajouter à l’écran d’accueil ».','warn');
+    }).catch(function(){});
+    return;
+  }
+  if(!el.installHelp.hidden){el.installHelp.hidden=true;return;}
+  installHelp(IOS
+    ?'iPhone / iPad : bouton Partager (carré avec une flèche vers le haut), puis « Sur l’écran d’accueil ». Si l’application est déjà installée, ouvre-la depuis l’écran d’accueil.'
+    :'Menu du navigateur (⋮), puis « Ajouter à l’écran d’accueil » ou « Installer l’application ». Si l’application est déjà installée, ouvre-la depuis l’écran d’accueil.');
+});
+renderInstall();
 
 function renderClock(){
   var now=new Date();
